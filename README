@@ -1,1 +1,29 @@
-Some fpga codes that have been written with the help of zipcpu's blog
+Some fpga codes that have been written with the help of zipcpu's blog.
+
+The designs are written in verilog and the test benches are written in
+cpp.
+
+All of these can be simulated with the help of Verilator
+
+	https://github.com/verilator
+
+Traces can be viewed with the help of gtkwave
+
+	https://github.com/gtkwave
+
+TODO
+====
+- Seperate out test benches from design codes.  Perhaps something like
+
+	bench/		<- test benches
+	rtl/		<- design codes
+
+- Update the Makefile to reflect the new dir structure.
+
+- The Makefile currently only supports the building of only one file,
+  extend this so that we don't have to edit the Makefile too much.
+
+- Update Makefile to support other compilers and not force the user to
+  use "g++" for compiling cpp.
+
+- Complete the test bench for fifo.
