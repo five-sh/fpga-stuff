@@ -1,0 +1,145 @@
+- reg can only be driven in procedural blocks like always and initial.
+
+- wire can only be driven in assign statements.
+
+- logic can be driven in both procedural blocks and continuous assign
+  statements.
+
+- a signal with more than one driver needs to be declared as a net-type
+  such as a wire so that sv can resolve the final value.
+
+Structural Datatypes
+====================
+
+- These are also called "nets", basically things which model hardware
+  components
+
+	reg  = x (unknown)
+	wire = z (high imp)
+
+- wires act like real wires in a circuit and reg hold values until a new
+  value is put on them.
+
+- decls for wire and reg are inside module but outside of any initial or
+  always block.
+
+
+Behavioral Datatypes
+====================
+
+- integer is 32 bits.
+
+- real is 64 bits.
+
+	integer = x (unknown)
+	real	= 0
+
+- time is 64 bits and is used in conjuction with $time sys task to hold
+  simulation time.
+
+Parameters
+==========
+- These are constants - therefore cannot be modified at runtime.
+
+- parameters can be modified using the defparam statement or during
+  module instance statement.
+
+logic - bit
+===========
+
+- logic is 4-state data type, while bit is 2-state.
+
+- improved version of reg.
+
+- it can be driven by continuous assignments, gates and modules in
+  addition to being a variable decl.
+
+
+
+	bit                             - unsigned
+	byte, shortint, int, longint    - signed
+
+	unsigned 2-state types,
+		bit            single_bit;
+		bit [31:0]     32_bit;
+
+	signed 2-state types,
+		int           integer;   // 32-bit signed integer
+		byte          8_bit  ;   //   8-bit signed integer
+		shortint      16_bit ;   // 16-bit signed integer
+		longint       64_bit ;   // 64-bit signed integer
+
+	unsigned from signed 2-state types,
+		int           unsigned integer; // 32-bit unsigned integer
+		byte          unsigned  8_bit;  // 8-bit unsigned integer
+		shortint      unsigned  16_bit; // 16-bit unsigned integer
+		longint       unsigned  64_bit; // 64-bit unsigned integer
+
+
+see snug sv design doc
+
+> Important: Synthesis treats bit and logic the same. 2-state and 4-state
+> value sets are for simulation, and have no meaning in synthesis.
+
+- decl everything as logic and let sv handle it.
+
+- integer is 4-state
+- int is 2-state
+
+Everything virtual
+==================
+
+- Classes decled virtual are only there so that some other class may
+  extend them.  They can include function definitions and other
+  stuff - but pure methods must not be defined but just declared
+
+	pure virtual function return_type func_name(args...);
+
+  This method should be overridden or an error is thrown.
+
+  Also, these methods should only be decled in virtual classes.  If
+  "pure" is used in non-abstract class, the compiler throws an error.
+
+- An extended virtual class does not have to extend a pure virtual
+  method.
+
+- Non-virtual class does not have to override non-pure methods from
+  virtual base class.
+
+- Virtual classes cannot be constructed but may be given to a handle
+  (which will point to null), e.g.
+
+	virtual class i2c_base;
+		...
+	endclass
+
+	i2c_base i2c;
+
+  Although, what is the point?
+
+- Virtual functions have strict rules, so always use them.  One of them
+  is that they don't allow the overriding func in an extended class to
+  change their, either no. of arguments or return type or type of
+  arguments or direction of arguments (input or output or inout) or all
+  of them.
+
+- The same rules apply to constraints.
+
+tasks and functions
+===================
+
+- tasks are extremely useful for verification but should not be used in
+  rtl.
+
+  This is because @posedge statements are not synthesizable and # delays
+  are ignored by the rtl synthesizer.
+
+- a "void function" is basically a 0 delay task.
+
+- Always use "always_comb" for combinational logic - "always_comb"
+  constructs a better sensitivity list than "always @(*)" of Verilog.
+
+- always_comb and always_latch are sensitive to changes inside of a
+  function but not a task.
+
+  (See SNUG SVLogicProcs pg 15 - Also comeback to the last appendix)

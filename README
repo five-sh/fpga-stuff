@@ -13,12 +13,9 @@ Traces can be viewed with the help of gtkwave
 
 TODO
 ====
-- Seperate out test benches from design codes.  Perhaps something like
 
-	bench/		<- test benches
-	rtl/		<- design codes
-
-- Update the Makefile to reflect the new dir structure.
+- Update the Makefile to reflect the new dir structure (paritally done
+  but very dirty).
 
 - The Makefile currently only supports the building of only one file,
   extend this so that we don't have to edit the Makefile too much.

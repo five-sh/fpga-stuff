@@ -1,0 +1,368 @@
+Without monitor, agent and scoreboard
+
+Transaction class
+=================
+
+- Fields required to generate stimulus are declared here.
+
+- This class can be used as a placeholder for the activity monitored by
+  the monitor on DUT signals
+
+
+Step 1: declare the fields
+
+	class transaction;
+		bit [3:0]a;
+		bit [3:0]b;
+		bit [6:0]c;
+	endclass
+
+Step 2: generate random stimulus
+
+	class transaction;
+		rand bit [3:0]a;
+		rand bit [3:0]b;
+		bit [6:0]c;
+	endclass
+
+Step 3: use display() method to display transaction properties
+
+
+	class transaction;
+		rand bit [3:0]a;
+		rand bit [3:0]b;
+		bit [6:0]c;
+
+		function void display(string s);
+			$display("%s", name);
+			$display("a = %0d, b = %0d", a, b);
+			$display("c = %0d", c);
+		endfunction
+	endclass
+
+Generator Class
+===============
+
+- Responsible for the generating the stimulus by randominzing the
+  transaction class and sending this randomized class to the driver
+  class which drives it to DUT.
+
+	class generator;
+		rand transaction t;
+
+		task main();
+			t = new();
+			if (!t.randomize())
+				$fatal("gen::transaction randomization failed");
+			gen2driv.put(t);
+		endtask
+	endclass
+
+- Mailbox is used to send the randomized transaction to the driver.
+
+- Event is used to indicate the end of packet generation.
+
+
+	class generator;
+		rand transaction t;
+		mailbox gen2driv;
+		event end;
+
+		// constructor
+		function new(mailbox gen2driv);
+			this.gen2driv = gen2driv;
+		endfunction
+
+		task main();
+			t = new();
+			if (!t.randomize())
+				$fatal("gen::transaction randomization failed");
+			gen2driv.put(t);
+			-> end; // trigger the end of generation
+		endtask
+	endclass
+
+- Now we add the variable to control the number of packets to be
+  created.
+
+
+	class generator;
+		rand transaction t;
+		mailbox gen2driv;
+		event end;
+		int repeat_count;
+
+		// constructor
+		function new(mailbox, gen2driv);
+			this.gen2driv = gen2driv;
+		endfunction
+
+		task main();
+			repeat(repeat_count) begin
+				t = new();
+				if (!t.randomize())
+					$fatal("gen::transaction randomization failed");
+				gen2driv.put(t);
+			end
+			-> end; // trigger the end of generation
+		endtask
+	endclass
+
+Interface
+=========
+
+- Interface is used to group the signals.
+
+	interface intf(input logic clk, reset);
+		logic valid;
+		logic [3:0]a;
+		logic [3:0]b;
+		logic [6:0]c;
+	endinterface
+
+Driver
+======
+
+- Receive the stimulus from the generator and drive it to DUT by
+  assigning transaction class values to the interface signals that we
+  declared above.
+
+	class driver;
+		int n_transactions;
+		virtual intf vi;
+		mailbox gen2driv;
+
+		function new(virtual intf vi, mailbox gen2driv);
+			this.vi = vi;
+			this.gen2driv = gen2driv;
+		endfunction
+
+		task reset();
+			wait(vi.reset());
+
+			$display("driver: reset started");
+			vi.a <= 0;
+			vi.b <= 0;
+			vi.valid <= 0;
+			wait(!vi.reset);
+			$display("driver: reset ended");
+		endtask
+
+		task main();
+			forever begin
+				transaction t;
+
+				gen2driv.get(t);
+
+				@posedge(vi.clk);
+				vi.valid <= 1;
+				vi.a <= t.a;
+				vi.b <= t.b;
+
+				@posedge(vi.clk);
+				vi.valid <= 0;
+				t.c <= vi.c;
+
+				@posedge(vi.clk);
+				t.display("driver: ");
+				n_transactions++;
+			end
+		endtask
+	endclass
+
+Environment
+===========
+
+- This is the superset of all the above.
+
+	class environment;
+		generator gen;
+		driver driv;
+		mailbox gen2driv;
+		virtual intf vi;
+
+		function new(virtual intf vi);
+			this.vi = vi;
+			gen2driv = new();
+			gen = new(gen2driv);
+			driv = new(vi, gen2driv);
+		endfunction
+
+		task pre_test();
+			driv.reset();
+		endtask
+
+		task test();
+			fork
+				gen.main();
+				driv.main();
+			join_any
+		endtask
+
+		task post_test();
+			wait(gen.end.triggered);
+			wait(driv.n_transactions == gen.repeat_count);
+		endtask
+
+		task run();
+			pre_test();
+			test();
+			post_test();
+			$finish;
+		endtask
+	endclass
+
+Test
+====
+
+- Written with the program block.
+
+	program test;
+		environment env;
+
+		intial begin
+			env = new(intf);
+			env.gen.repeat_count = 10;
+			env.run();
+		end
+	endprogram
+
+Testbench Top
+=============
+
+- This is the file which connects to the DUT.
+
+	module tbench_top;
+		bit clk;
+		bit reset;
+
+		always #5 clk = ~clk;
+
+		initial begin
+			reset = 1;
+			#5
+			reset = 0;
+		end
+
+		intf i_intf(clk, reset);
+		test t1(i_intf);
+
+		adder DUT (
+			.clk(i_intf.clk),
+			.reset(i_intf.reset),
+			.a(i_intf.a),
+			.b(i_intf.b),
+			.valid(i_intf.valid),
+			.c(i_intf.c),
+		);
+
+		intial begin
+			$dumpfile("dump.vcd");
+			$dumpvars;
+		end
+	endmodule
+
+
+An extension to this would be the use of monitor and scorecard
+
+Monitor
+=======
+
+- Samples the interface signals and converts the signal level activity
+  to transaction level.
+
+- Send the sampled transaction to scoreboard via mailbox
+
+	class monitor;
+		virtual intf vi;
+		mailbox mon2scb;
+
+		function new(virtual intf vi, mailbox mon2scb);
+			this.vi = vi;
+			this.mon2scb = mon2scb;
+		endfunction
+
+		task main();
+			forever begin
+				transaction t;
+
+				t = new();
+
+				@(posedge vi.clk);
+				wait(vi.valid);
+				t.a = vi.a;
+				t.b = vi.b;
+
+				@(posedge vi.clk);
+				t.c = vi.c;
+
+				@(posedge vi.clk);
+				mon2scb.put(t);
+				t.display("monitor: ");
+			end
+		endtask
+	endclass
+
+Scoreboard
+==========
+
+- Receives the sample packet from the monitor and compares with the
+  expected result.  An error will be reported if there is a mismatch.
+
+	class scoreboard;
+		mailbox mon2scb;
+		int n_transactions;
+
+		function new(mailbox mon2scb);
+			this.mon2scb = mon2scb;
+		endfunction
+
+		task main();
+			transaction t;
+
+			forever begin
+				mon2scb.get(t);
+				if (t.a + t.b == t.c)
+					$display("result is as expected");
+				else
+					$display("wrong result\n"
+						  expected:%0d\nactual:%0d",
+						  t.a + t.b, t.c);
+				n_transactions++;
+				t.display("scoreboard:");
+			end
+		endtask
+	endclass
+
+
+The environment class would then become,
+
+	class environment;
+		...
+		monitor mon;
+		scoreboard scb;
+		mailbox mon2scb;
+
+		...
+
+		function new(virtual intf vi);
+			...
+			mon2scb = new();
+			...
+
+			mon = new(vi, mon2scb);
+			scb = new(mon2scb);
+		endfunction
+
+		...
+
+		task test();
+			fork
+				...
+				mon.main();
+				scb.main();
+			join_any
+		endtask
+
+		...
+	endclass

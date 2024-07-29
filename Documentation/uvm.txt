@@ -1,0 +1,58 @@
+- A uvm testbench contains the following:
+
+	Test Writer
+	Environment Writer
+	Sequence Writer
+
+- Use phase.raise_objection() and phase.drop_objection() so as to tell
+  uvm to run whatever is within till it is completed.  Think of it like
+  doing down_interruptible() and up_interruptible() from the kernel.
+
+	class my_extended_test extends my_test; // my_test is the base
+						// class which extends uvm_test
+		`uvm_component_utils(my_extended_test); // register with
+							// uvm factory
+
+		...
+
+		task run_phase(uvm_phase phase);
+			phase.raise_objection("starting test");
+			my_seq seq = my_seq::type_id::create("seq");
+			assert(seq.randomize() with { src_addr == 32'h0800_0101;
+						      xfer_size == 128; });
+			seq.start(m_env.m_agent.m_sequencer);
+			phase.drop_objection("ending test");
+		endtask
+	endclass
+
+  The raise_objection() call must be made before the first nonblocking
+  assignment is made in that phase.
+
+  These calls are important because the run_phase() is the only function
+  that runs w.r.t. time in the class.
+
+- The environment class extended from uvm_env will use an additional
+  phase called connect_phase()
+
+	build_phase();
+	connect_phase(); // <--
+	run_phase();
+
+  The connect_phase of the agent is used for three purposes: to connect
+  the sequencer and driver, to connect the coverage collector and
+  monitor, and to set the agent’s analysis ports to map to the monitor’s
+  ports.
+
+- UVM components are objects that form the hierarchy of testbench, and
+  are objects that are generally created at the beginning of a simulation
+  and retained throughout the simulation.
+
+- A uvm agent is a low-level building block that is associated with a
+  specific set of DUT I/O pins and the communication protocol pins.
+
+  For example, the USB bus to a DUT will have an agent for that set of
+  ports.  Similarly, the AXI bus would have an agent for that bus.
+
+- There is no functional reason for an agent to be extended from the
+  uvm_agent base class. An agent can also be extended from the
+  uvm_component base class.
