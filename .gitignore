@@ -1,3 +1,5 @@
 *.o
 *.vcd
 obj_dir/
+INCA_libs/
+*irun*
