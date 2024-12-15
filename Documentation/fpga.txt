@@ -1,0 +1,272 @@
+- The constraint file maps the PORTS to the PINS.
+
+- The board vendor should always provide us with a master constraint
+  file.
+
+- One would still need to
+
+	- Comment out pins that one isn't using.
+	- Rename pins to match one's verilog.
+
+- For example, if using nextpnr, we have need a physical constraints
+  file - .pcf
+
+	set_io i_sw	P13
+	set_io o_led	C8
+
+  One could also use UCF (all of this depends on the fpga's manufacturer)
+
+	NET "i_sw" LOC = "P9" | IOSTANDARD = LVCMOS33;
+	NET "o_led" LOC = "N3" | IOSTANDARD = LVCMOS33;
+
+	Most development boards use the 3.3V LVCMOS standard
+	- Pins are typically grouped in banks.
+	- All pins in a bank use the same voltage.
+	- This voltage is usually fixed.
+	- The master constraint file will help here.
+
+  One could also use XDC (Vivado) file
+
+	set_property -dict {PACKAGE_PIN E22 IOSTANDARD LVCMOS12} [get_ports {i_sw}]
+	set_property -dict {PACKAGE_PIN T14 IOSTANDARD LVCMOS25} [get_ports {o_led}]
+
+  These file are ususally given by the manufacturer, just comment out
+  the ones not needed and rename / add.
+
+- Simulation is a very important part of design because
+
+	      Simulation                    Hardware
+	- can trace all signals         - can only see some signals
+	- extended tests cost GB        - extended tests are simple
+	- easy to debug                 - very hard to debug
+
+  since hardware is hard to debug, simulation is vital.
+
+- Verilator is a simulator.  Just do
+
+	$ verilator -Wall -cc filename.v
+	$ cd obj_dir/
+	$ make -f Vfilename.mk
+
+- We still need a simulation driver for this - which basically becomes
+  the filename.cpp
+
+Wires
+=====
+
+- Wires can also reperesent outputs of combinatorical logic.
+
+- Wires have no memory.
+
+- Always avoid *, / and %.
+
+- Always avoid circular logic - e.g.
+
+	assign o_led = i_sw + o_led;
+
+  This gives rise to unexpected hw behavior.
+
+- Always remember that a hardware value (i.e. a wire) can only be set once
+
+	// this is wrong
+	assign o_led = i_sw | 9'h87;
+	assign o_led = i_sw + 1;
+
+- Always add
+
+	`default_nettype none
+
+  at the top of the module file.  This will make sure that we don't
+  create a new wires because of typos in the code - e.g.
+
+	input wire i_sw;
+
+	...
+	assign o_led = sw;
+
+Regs
+====
+
+- A latch is something that looks like the following
+
+	input wire i_s;
+	input wire [7:0] i_v;
+	output reg [7:0] o_r;
+
+	always @(*) begin
+		if (i_s)
+			o_r = i_v;
+	end
+
+- A latch requires memory.
+- It may do one thing in simulation and a wholly different thing on hw.
+- Most fpgas don't support latches.
+- Latches have subtle timing problems in hw.
+
+- Always avoid using latches.
+
+- Therefore, change the code to not form a latch
+
+	always @(*) begin
+		o_r = 0;
+		if (i_s)
+			o_r = i_v;
+	end
+
+  - Since o_r now has a default value, this prevents a latch from being
+    inferred.
+
+  -  No memory is required.
+
+  - The last assignment gives o_r its final value.
+
+- Any registers set within an "always @(posedge i_clk)" block will
+  always transition to new values in next clk edge only.
+
+- Always use non-blocking assignments in "always @(posedge i_clk)"
+  blocks.  If blocking assignments need to be used, use them with
+  caution as they may cause simulation-hardware mismatch.
+
+- Last assignment always wins - e.g.
+
+	always @(posedge i_clk) begin
+		A <= 5;
+		A <= A + 1'b1;
+	end
+
+		A = 1, 2, 3, 4, 5, ... at each next clk edge
+
+	which would not have been the case if A were assigned with
+	blocking statements
+
+		A = 6
+
+- Consider
+
+	always @(posedge i_clk) begin
+		A = 5;
+		A = A + 1'b1;
+	end
+
+	always @(posedge i_clk)
+		B <= A;
+
+	Assuming A = 0 before the clk tick, this result is simulation
+	dependent i.e. B may be set to 0 or set to 6.  Hence don't use
+	blocking assignments in sequential blocks (i.e. clk triggered).
+
+Simulator vs Hardware
+=====================
+
+- When there are multiple always blocks, the hw will execute them all
+  at a time but the simulator will execute one at a time.
+
+Rules when using a simulator
+============================
+
+- Make sure the design can be synthesized.
+
+- Make sure it fits within the chosen device.
+
+- Make sure it maintains an appropriate clk rate.
+
+
+- We saw earlier that we can't do circular loops with wires - this is
+  where regs come in.  To represent feedbck (say in control systems), we
+  use regs - e.g.
+
+	assign err = i_actual - o_command;
+	always @(poedge i_clk)
+		o_command <= o_command + (err >> 5);
+
+Interger clk divider
+====================
+
+	always @(posedge i_clk) begin
+		if (counter >= CLOCK_RATE_HZ / 2 - 1) begin
+			counter <= 0;
+			o_led <= !o_led;
+		end else begin
+			counter <= counter + 1;
+		end
+	end
+
+Fractional clk divider
+======================
+
+	parameter [31:0] INCREMENT = (1 << 30) / (CLOCK_RATE_HZ / 4);
+
+	always @(posedge i_clk)
+		counter <= counter + INCREMENT;
+
+	assign o_led = counter[31];
+
+- Where INCREMENT is just
+
+	INCREMENT = (2 ^ 32) / CLOCK_RATE_HZ;
+
+	32 because the counter register is 32 bits long.
+
+
+- Concatenation can be on left hand side too.
+
+FSM
+===
+
+- The states in a state machine are usually indices or addrs - e.g.
+  "led_index" in a led walker.
+
+- A FSM consists of
+
+	inputs
+	state variable
+	outputs
+
+- Mealy
+
+	outputs depend upon the current state + inputs.
+
+- Moore
+
+	outputs depend upon the current state only.
+
+Formal Verification
+===================
+
+- Proves a desgin works.
+
+- Easy to use and faster and easier than simulation.
+
+- Used for design components and not entire designs.
+
+- Three basic FV modes -
+
+	- BMC (Bounded model checking)
+
+		[options]
+		mode bmc
+		depth 20  // tries for first N = 20
+
+		- An assert is a safety property and succeeds only if
+		  NO trace can be found that makes any one of the
+		  assertions fail.
+
+	- Cover
+
+		[options]
+		mode cover
+		depth 20
+
+		- cover is a liveness property and succeeds only if
+		  ATLEAST ONE trace can be found to make the statement
+		  true.
+
+	- Full proof using k-induction
+
+		[optoins]
+		mode prove
+		depth 20
+
+		- Also examines N arbitrary steps after N = 20.
+		- Doesn't take into account "initial" statements though
+		  and these statements must be checked with "assert".
